@@ -2,93 +2,79 @@
 AI 기반 웹 취약점 탐지
 
 ## ✨ Key Features (요약)
-- 🔎 **Crawler**: 하위 URL주소 수집, HTML/JS 추출
-- 🧠 **AI Assistant**: HTML/JS 기반 취약점 제시, 공격 페이로드 제시
-- 📊 **Report**: 공격 페이로드 제시 보고서 작성
+- 🔎 **Crawler**: 페이지 렌더링 후 <script> 수집, 벤더 휴리스틱 + OpenAI로 core_js만 선별 저장 (page.html, core_js/*, 목록 파일 생성)
+- 🧠 **analysis**: page.html + core_js/* 증거만으로 '확정' 취약점 JSON 리포트 생성 (excluded 후보 분리, 프롬프트 스키마 엄격)
+- 📊 **json_to_pdf**: JSON 리포트를 한국어 단일 HTML 문서로 변환(<!doctype html> 포함, 코드 원문 보존)
 
 > 데모 스크린샷 자리:  
 > `docs/images/demo.png` (나중에 추가)
 
 ---
 
-## 🧭 Table of Contents
-- [Quick Start]
-- [Configuration]
-- [Usage]
-- [Project Layout]
-- [Roadmap]
-- [Tech Stack]
-- [Acknownledgements]
-  
----
+## 🚀Quick Start
 
-## 🚀 Quick Start
-# ex)Python >= 3.11
+**1) Requirements**
+Python 3.10+ (권장 3.11)
+Google Chrome (Selenium이 헤드리스 크롬을 사용)
+인터넷 연결 (대상 사이트/모델 호출)
 
-python -m venv .venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-cp env.example .env
+**2) Install**
+가상환경을 추천합니다.
+- macOS / Linux
+python -m venv .venv && source .venv/bin/activate
+- Windows (PowerShell)
+python -m venv .venv; .\.venv\Scripts\Activate.ps1
 
-# ex)Dev server (예: FastAPI)
-uvicorn app.main:app --reload  # 또는 python app.py
+-필요 패키지 설치:
+pip install selenium webdriver-manager beautifulsoup4 requests openai jsbeautifier rapidfuzz tabulate
 
-## ⚙️Configuration
-# Target / Crawl
-START_URL=(http://192.168.51.22:3000/#/)
-CRAWL_MAX_DEPTH=2
-CRAWL_CONCURRENCY=5
+**3) Environment**
+코드내 OpenAI 키 삽입
 
-# AI
-OPENAI_API_KEY=<your-key>
-MODEL_NAME=gpt-<…>
+-macOS / Linux
+export OPENAI_API_KEY="sk-..."           # 필수
+export OPENAI_MODEL="gpt-4o-mini"        # 선택
+-Windows (PowerShell)
+$env:OPENAI_API_KEY="sk-..."
+$env:OPENAI_MODEL="gpt-4o-mini"
 
-# Report
-REPORT_DIR=reports
+**4) Run**
 
-## 🧪 Usage
-# 단일 URL 스캔
-python -m app scan --url https://target.tld --modules xss,sqli --out reports/scan.html
+python crawler.py
+->(프롬프트에 URL 입력)
 
-# 리스트 입력
-python -m app scan --list targets.txt --headless --screenshot
+crawler.py가 페이지를 렌더링하고 <script>를 수집합니다.
 
-## 🗂Project Layout
-├─ app/ or src/
-│  ├─ crawler/        # 하위주소 HTML, JS 추출, 렌더링(Selenium)
-│  ├─ payloads/       # XSS/SQLi/… 페이로드 데이터
-│  ├─ reporters/      # HTML/CSV/JSON 리포트 생성
-│  └─ main.py         # CLI/웹 서버 엔트리
-├─ tests/             # 단위/통합 테스트
-├─ package.json
-├─ env.example
-├─ docs/              # 아키텍처/스크린샷/설계 메모
-└─ reports/           # 출력물(ignored)
+벤더 JS는 휴리스틱으로 걸러내고, 남은 후보를 OpenAI로 분류하여 core_js만 저장합니다.
 
-## 🗺 Roadmap
- 크롤러를 통해 하위주소의 HTML/JS 추출
+크롤이 끝나면 자동으로 analysis.py(OWASP Top 10 정밀 분석)가 실행되고,
+분석이 끝나면 json_to_pdf.py가 실행되어 리포트를 생성합니다.
 
- LLM을 이용한 취약점 분석
+**5) Outputs**
 
- payload데이터로 학습시킨 LLM을 이용해 최적 payload 추천받음
+모든 결과물은 crawl_out/ 폴더에 생성됩니다.
 
- LLM을 통해 보고서 요약/심각도 평가
+crawl_out/
+ ├─ page.html                     # 렌더된 최종 HTML
+ ├─ core_js/                      # core_app로 분류된 JS만 저장
+ ├─ core_js_list.txt              # core JS 파일명 ↔ 원본 URL
+ ├─ core_js_urls.json             # core JS 요약(파일명/URL/상태/해시 등)
+ ├─ owasp_top10_report.json       # 확정 취약점 분석 결과(JSON)
+ └─ owasp_top10_report.pdf|html   # json_to_pdf.py 결과물 (구현에 따라 PDF 또는 HTML)
 
-## 🧰 Tech Stack
-Language: <Python 3.11 / Node 18>
+참고: 만약 analysis.py가 json_to_pdf.py를 자동 실행하지 않도록 되어 있다면,
+아래처럼 수동 실행하세요.
 
-Web: <FastAPI / Express>
+python json_to_pdf.py
 
-Headless: <Playwright / Selenium>
+**6) Troubleshooting**
 
-DB (옵션): <SQLite / MongoDB>
+Chrome/드라이버 오류: 크롬 설치 여부 확인. 회사 PC라면 보안 정책으로 자동 설치가 막힐 수 있습니다.
 
-Lint/Test: <ruff/pytest> or <eslint/jest>
+LLM 호출 에러: OPENAI_API_KEY 설정 확인, 네트워크 프록시/방화벽 점검.
 
-## 🙏 Acknowledgments
+토큰/길이 초과: 페이지가 매우 크면 분석 입력 축약 로직이 동작합니다. 그래도 실패한다면 대상 페이지 범위를 줄이세요.
 
-<참고한 오픈소스/데이터/문서 링크>
-
-<팀원/멘토 크레딧>
 
 
 
